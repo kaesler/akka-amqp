@@ -2,9 +2,8 @@ package akka
 
 import java.io.IOException
 
-
 package object amqp {
-  
+
   object RabbitQueue extends com.rabbitmq.client.AMQP.Queue {
     type DeclareOk = com.rabbitmq.client.AMQP.Queue.DeclareOk
     type BindOk = com.rabbitmq.client.AMQP.Queue.BindOk
@@ -14,12 +13,9 @@ package object amqp {
     type DeclareOk = com.rabbitmq.client.AMQP.Exchange.DeclareOk
   }
 
-  type ConfirmingPublisher = akka.amqp.CanBuildConfirmingPublisher#ConfirmingPublisher
-  type Publisher = akka.amqp.CanBuildDurablePublisher#DurablePublisher
-  type Channel = akka.amqp.HasDurableChannel#DurableChannel
-  type Consumer = akka.amqp.CanBuildDurableConsumer#DurableConsumer
-  type Connection = akka.amqp.DurableConnection
-  
+  @deprecated("use ConnectionActor", "")
+  type DurableConnectionActor = ConnectionActor
+
   type ReturnListener = com.rabbitmq.client.ReturnListener
   type ConfirmListener = com.rabbitmq.client.ConfirmListener
   type BasicProperties = com.rabbitmq.client.AMQP.BasicProperties
@@ -29,44 +25,39 @@ package object amqp {
   type ShutdownSignalException = com.rabbitmq.client.ShutdownSignalException
   type AlreadyClosedException = com.rabbitmq.client.AlreadyClosedException
   type ConnectionFactory = com.rabbitmq.client.ConnectionFactory
-  type RabbitConnection =  com.rabbitmq.client.Connection
-  type RabbitChannel =  com.rabbitmq.client.Channel
-  
-  object RabbitAddress  {
+  type RabbitConnection = com.rabbitmq.client.Connection
+  type RabbitChannel = com.rabbitmq.client.Channel
+
+  object RabbitAddress {
     def parseAddress = com.rabbitmq.client.Address.parseAddress _
-  }  
-  class RabbitAddress(host:String,port:Int) extends com.rabbitmq.client.Address(host,port) {
-    def this(host:String) = this(host,-1)
   }
-  
-  
-  
-  
-  type NamedExchangeDeclaration = RabbitChannel => NamedExchange
-  type ExchangeDeclaration = RabbitChannel => DeclaredExchange
-  type QueueDeclaration = RabbitChannel => DeclaredQueue
-  
-  implicit class DeclaredQueue(val peer: RabbitQueue.DeclareOk) extends Queue {
-  def name: String = peer.getQueue()
-  def messageCount = peer.getMessageCount()
-  def consumerCount = peer.getConsumerCount()
-  
-  def purge(implicit channel: RabbitChannel) {
-    channel.queuePurge(name)
+  class RabbitAddress(host: String, port: Int) extends com.rabbitmq.client.Address(host, port) {
+    def this(host: String) = this(host, -1)
   }
 
-  def delete(ifUnused: Boolean, ifEmpty: Boolean)(implicit channel: RabbitChannel) {
-    channel.queueDelete(name, ifUnused, ifEmpty)
+  type NamedExchangeDeclaration = RabbitChannel ⇒ NamedExchange
+  type ExchangeDeclaration = RabbitChannel ⇒ DeclaredExchange
+  type QueueDeclaration = RabbitChannel ⇒ DeclaredQueue
+
+  implicit class DeclaredQueue(val peer: RabbitQueue.DeclareOk) extends Queue {
+    def name: String = peer.getQueue()
+    def messageCount = peer.getMessageCount()
+    def consumerCount = peer.getConsumerCount()
+
+    def purge(implicit channel: RabbitChannel) {
+      channel.queuePurge(name)
+    }
+
+    def delete(ifUnused: Boolean, ifEmpty: Boolean)(implicit channel: RabbitChannel) {
+      channel.queueDelete(name, ifUnused, ifEmpty)
+    }
+
+    /**
+     * start the binding process to bind this Queue to an Exchange
+     */
+    def <<(exchange: DeclaredExchange) = QueueBinding0(exchange, name)
+
   }
-  
-  /**
-   * start the binding process to bind this Queue to an Exchange
-   */
-  def <<(exchange: DeclaredExchange) = QueueBinding0(exchange, name)
-  
-  }
-  
-  
- 
-} 
-  
+
+}
+

@@ -3,7 +3,7 @@ package akka.amqp
 import com.typesafe.config.ConfigFactory
 
 object AmqpConfig {
-  
+
   object Valid {
     val configString = """
       akka.amqp.default {
@@ -22,8 +22,8 @@ object AmqpConfig {
   }
   """
     val config = ConfigFactory.parseString(configString)
-  
- val settings =  new AmqpSettings(config.getConfig("akka.amqp.default"))
+
+    val settings = new AmqpSettings(config.getConfig("akka.amqp.default"))
   }
   object Invalid {
     val config = ConfigFactory.parseString("""
@@ -31,6 +31,6 @@ object AmqpConfig {
        addresses           = ["invalid-test-connection-no-op:1234"]
   }
         """).withFallback(Valid.config)
-        val settings =  new AmqpSettings(config.getConfig("akka.amqp.default"))
+    val settings = new AmqpSettings(config.getConfig("akka.amqp.default"))
   }
 }

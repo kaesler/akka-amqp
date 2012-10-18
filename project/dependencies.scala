@@ -6,6 +6,7 @@ object dependencies {
   def AmqpClient = "com.rabbitmq" % "amqp-client" % "2.8.7"   													  // ApacheV2
 
   def AkkaActor = "com.typesafe.akka" % "akka-actor_2.10.0-M7" % "2.1-M2"
+  def AkkaAgent = "com.typesafe.akka" % "akka-agent_2.10.0-M7" % "2.1-M2"
 
   def Specs2      = "org.specs2"                 % "specs2_2.10.0-M7"              % "1.12.1.1"        % "test"  // MIT
   def JUnit = "junit" % "junit" % "4.7" % "test"   																 // Common Public License 1.0

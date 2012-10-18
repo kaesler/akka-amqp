@@ -48,7 +48,7 @@ object AkkaSpec {
     val s = Thread.currentThread.getStackTrace map (_.getClassName) drop 1 dropWhile (_ matches ".*AkkaSpec.?$")
     val reduced = s.lastIndexWhere(_ == clazz.getName) match {
       case -1 ⇒ s
-      case z ⇒ s drop (z + 1)
+      case z  ⇒ s drop (z + 1)
     }
     reduced.head.replaceFirst(""".*\.""", "").replaceAll("[^a-zA-Z_0-9]", "_")
   }
@@ -58,14 +58,14 @@ object AkkaSpec {
 abstract class AkkaSpec(_system: ActorSystem)
   extends TestKit(_system) with WordSpec with MustMatchers with BeforeAndAfterAll {
 
-  def this(config: Config) = this(ActorSystem(AkkaSpec.getCallerName(getClass),
+  def this(config: Config) = this(ActorSystem(AkkaSpec.getCallerName(getClass).filterNot(_ == '_'),
     ConfigFactory.load(config.withFallback(AkkaSpec.testConf))))
 
   def this(s: String) = this(ConfigFactory.parseString(s))
 
   def this(configMap: Map[String, _]) = this(AkkaSpec.mapToConfig(configMap))
 
-  def this() = this(ActorSystem(AkkaSpec.getCallerName(getClass), AkkaSpec.testConf))
+  def this() = this(ActorSystem(AkkaSpec.getCallerName(getClass).filterNot(_ == '_'), AkkaSpec.testConf))
 
   val log: LoggingAdapter = Logging(system, this.getClass)
 
@@ -145,7 +145,7 @@ class AkkaSpecSpec extends WordSpec with MustMatchers {
         implicit val davyJones = otherSystem.actorOf(Props(new Actor {
           def receive = {
             case m: DeadLetter ⇒ locker :+= m
-            case "Die!" ⇒ sender ! "finally gone"; context.stop(self)
+            case "Die!"        ⇒ sender ! "finally gone"; context.stop(self)
           }
         }), "davyJones")
 
