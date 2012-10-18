@@ -1,6 +1,6 @@
 package akka.amqp
 import scala.concurrent.Future
-import akka.actor.FSM.{ CurrentState, Transition }
+import akka.actor.FSM.{ CurrentState, Transition, SubscribeTransitionCallBack }
 import scala.concurrent.{ ExecutionContext, Promise }
 import scala.concurrent.util.duration._
 import scala.concurrent.util.Duration
@@ -11,6 +11,7 @@ import akka.actor._
 import akka.util.Timeout
 import akka.pattern.ask
 import java.io.IOException
+import util.control.Exception
 
 sealed trait ConnectionState
 case object Disconnected extends ConnectionState
@@ -42,7 +43,7 @@ private[amqp] class ReconnectTimeoutGenerator {
     previousTimeout = 1
   }
 }
-private[akka] case class CreateRandomNameChild(props: Props)
+private[akka] case class CreateChannel(persistent: Boolean)
 
 class ConnectionActor private[amqp] (settings: AmqpSettings, isConnectedAgent: akka.agent.Agent[Boolean])
   extends Actor with FSM[ConnectionState, Option[RabbitConnection]] with ShutdownListener {
@@ -97,6 +98,18 @@ class ConnectionActor private[amqp] (settings: AmqpSettings, isConnectedAgent: a
   }
 
   when(Connected) {
+    case Event(CreateChannel(persistent), Some(connection)) ⇒
+      val props = if (persistent) {
+        Props(new ChannelActor(settings) with DowntimeStash).withDispatcher("akka.amqp.stashing-dispatcher")
+      } else {
+        Props(new ChannelActor(settings))
+      }
+      val channelActor = context.actorOf(props)
+      context.
+        self ! SubscribeTransitionCallBack(channelActor) //subscribe the channelActor to connection transitions
+      sender ! channelActor
+      stay()
+
     case Event(WithConnection(callback), Some(connection)) ⇒
       stay() replying callback(connection)
     case Event(Disconnect, Some(connection)) ⇒
@@ -115,16 +128,13 @@ class ConnectionActor private[amqp] (settings: AmqpSettings, isConnectedAgent: a
         //if we are going to issue another connect command.  
         //Then we should make absolutely sure this connection is shut down first. (sometimes it isn't, particularly during testing)
         connection.removeShutdownListener(this)
-        connection.close()
+        Exception.ignoring(classOf[AlreadyClosedException]) {
+          connection.close()
+        }
 
         self ! Connect
       }
       goto(Disconnected)
-  }
-  whenUnhandled {
-    case Event(CreateRandomNameChild(child), _) ⇒
-      sender ! (try context.actorOf(child) catch { case e: Exception ⇒ e })
-      stay()
   }
 
   onTransition {
@@ -134,8 +144,12 @@ class ConnectionActor private[amqp] (settings: AmqpSettings, isConnectedAgent: a
   initialize
 
   onTermination {
-    case StopEvent(reason, state, stateData) ⇒
-      stateData foreach (_.close())
+    case StopEvent(reason, state, connectionOption) ⇒
+      stateData foreach { c ⇒
+        Exception.ignoring(classOf[AlreadyClosedException]) {
+          c.close()
+        }
+      }
       isConnectedAgent send false
       log.debug("Successfully disposed")
       executorService.shutdown()
