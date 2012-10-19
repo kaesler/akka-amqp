@@ -4,59 +4,76 @@ import scala.collection.JavaConverters._
 
 object Exchange {
   def nameless = NamelessExchange
-  def apply(name: String) = UndeclaredExchange(name)
-  def named(name: String) = UndeclaredExchange(name)
+  def apply(name: String) = new ExchangeDeclarationMode(name)
+  def named(name: String) = new ExchangeDeclarationMode(name)
 }
 
-case class ExchangeParams(exchangeType: String,
-                          durable: Boolean = false,
-                          autoDelete: Boolean = false,
-                          internal: Boolean = false,
-                          arguments: Option[Map[String, AnyRef]] = None)
+sealed trait Exchange {
+  val name: String
+  val params: Option[ExchangeParams]
+}
 
-abstract class UndeclaredExchange0(val name: String) {
-  def apply(exchangeType: String,
-            durable: Boolean = false,
-            autoDelete: Boolean = false,
-            internal: Boolean = false,
-            arguments: Option[Map[String, AnyRef]] = None): NamedExchangeDeclaration = { channel ⇒
+case class ExchangeParams private[amqp] (exchangeType: String,
+                                         durable: Boolean = false,
+                                         autoDelete: Boolean = false,
+                                         internal: Boolean = false,
+                                         arguments: Option[Map[String, AnyRef]] = None)
 
+class ExchangeDeclarationMode private[amqp] (val name: String) {
+  def active(exchangeType: String,
+             durable: Boolean = false,
+             autoDelete: Boolean = false,
+             internal: Boolean = false,
+             arguments: Option[Map[String, AnyRef]] = None) = ActiveUndeclaredExchange(name, exchangeType, durable, autoDelete, internal, arguments)
+  def passive = PassiveUndeclaredExchange(name)
+}
+
+//make the declarations not use rabbitchannel, and allow access to name, etc.
+
+sealed trait UndeclaredExchange extends Exchange with Declarable[DeclaredExchange] {
+  def declare(implicit channel: RabbitChannel): DeclaredExchange
+}
+case class PassiveUndeclaredExchange private[amqp] (val name: String) extends UndeclaredExchange {
+  val params: Option[ExchangeParams] = None
+  def declare(implicit channel: RabbitChannel): NamedExchange = NamedExchange(name, channel.exchangeDeclarePassive(name), None)
+}
+case class ActiveUndeclaredExchange private[amqp] (val name: String, exchangeType: String,
+                                                   durable: Boolean = false,
+                                                   autoDelete: Boolean = false,
+                                                   internal: Boolean = false,
+                                                   arguments: Option[Map[String, AnyRef]] = None) extends UndeclaredExchange {
+
+  lazy val params: Option[ExchangeParams] = Some(ExchangeParams(exchangeType, durable, autoDelete, internal, arguments))
+
+  def declare(implicit channel: RabbitChannel) = {
     val declareOk = channel.exchangeDeclare(name, exchangeType, durable, autoDelete, internal, arguments.map(_.asJava).getOrElse(null))
     val params = ExchangeParams(exchangeType, durable, autoDelete, internal, arguments)
     NamedExchange(name, declareOk, Some(params))
   }
-  def passive: NamedExchangeDeclaration = channel ⇒ NamedExchange(name, channel.exchangeDeclarePassive(name), None)
 }
-case class UndeclaredExchange(override val name: String) extends UndeclaredExchange0(name)
+
+sealed trait DeclaredExchange extends Exchange
+
 case object NamelessExchange extends DeclaredExchange {
   val name = ""
   val params = None
 }
 
-object DeclaredExchange {
-  implicit def declared2Declaration(ex: DeclaredExchange): ExchangeDeclaration = _ ⇒ ex
-}
-
-trait DeclaredExchange {
-  val name: String
-  val params: Option[ExchangeParams]
-}
-
-case class NamedExchange(val name: String, val peer: RabbitExchange.DeclareOk, val params: Option[ExchangeParams] = None) extends DeclaredExchange {
-
-  def delete(ifUnused: Boolean)(implicit channel: RabbitChannel) = channel.exchangeDelete(name, ifUnused)
-
+case class NamedExchange private[amqp] (val name: String, val peer: RabbitExchange.DeclareOk, val params: Option[ExchangeParams] = None) extends DeclaredExchange {
   /**
    * start the binding process to bind this Queue to an Exchange
    */
-  def >>(queue: DeclaredQueue) = QueueBinding0(this, queue.name)
+  def >>(queue: Queue) = QueueBinding0(this, queue)
+  def >>(destination: Exchange)(routingKey: String)(arguments: Option[Map[String, AnyRef]] = None) = {
+    ExchangeToExchangeBinding(this, destination, routingKey, arguments)
+  }
 
 }
 
-case class ExchangeToExchangeBinding(destination: DeclaredExchange,
-                                     source: DeclaredExchange,
-                                     routingKey: String,
-                                     arguments: Option[Map[String, AnyRef]] = None) {
+case class ExchangeToExchangeBinding private[amqp] (source: Exchange,
+                                                    destination: Exchange,
+                                                    routingKey: String,
+                                                    arguments: Option[Map[String, AnyRef]] = None) {
 
   def bind(channel: RabbitChannel) {
     channel.exchangeBind(destination.name, source.name, routingKey, arguments.map(_.asJava).getOrElse(null))

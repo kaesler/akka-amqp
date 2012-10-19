@@ -19,9 +19,10 @@ import akka.serialization.SerializationExtension
 import akka.actor.Props
 import akka.actor.Stash
 import ChannelActor._
-/**
- * Stores mess
- */
+import scala.concurrent.util.FiniteDuration
+///**
+// * Stores mess
+// */
 trait DowntimeStash extends Stash {
   this: ChannelActor ⇒
 
@@ -32,18 +33,51 @@ trait DowntimeStash extends Stash {
   }
 
   onTransition {
-    case (_, Available) ⇒
-      unstashAll()
+    case Unavailable -> Available ⇒ unstashAll()
   }
 }
-
+private[amqp] case object RequestNewChannel
 object ChannelActor {
 
-  private[amqp] sealed trait ChannelState
-  private[amqp] case object Available extends ChannelState
-  private[amqp] case object Unavailable extends ChannelState
+  /**
+   * ****************************************
+   *                 Channel States
+   * ****************************************
+   */
+  sealed trait ChannelState
+  case object Unavailable extends ChannelState
+  case object Available extends ChannelState
+  case class ChannelData(channel: Option[RabbitChannel], mode: ChannelMode)
 
-  private case class RequestChannel(connection: RabbitConnection)
+  object %: {
+    def unapply(channelData: ChannelData): Option[(Option[RabbitChannel], ChannelMode)] = {
+      Some((channelData.channel, channelData.mode))
+    }
+  }
+
+  sealed trait ChannelMode {
+    def %:(channel: Option[RabbitChannel]): ChannelData = ChannelData(channel, this)
+  }
+  /**
+   * A basicChannel may declare/delete Queues and Exchanges.
+   * It may also publish but will not send back Returned or Confirm messages
+   */
+  case object BasicChannel extends ChannelMode
+
+  /**
+   * The given listening ActorRef receives messages that are Returned or Confirmed
+   */
+  case class Publisher(listener: ActorRef) extends ChannelMode
+  /**
+   * The given listening ActorRef receives messages that are sent to the queue.
+   */
+  case class Consumer(listener: ActorRef, queue: DeclaredQueue) extends ChannelMode
+
+  /**
+   * ****************************************
+   *         Channel Actor Message API
+   * ****************************************
+   */
 
   /**
    * Message to Execute the given code when the Channel is first Received from the ConnectionActor
@@ -60,16 +94,49 @@ object ChannelActor {
    * Or immediately if the channel has already been received
    */
   case class WithChannel[T](callback: RabbitChannel ⇒ T)
+
+  case class Declare(exchangeOrQueue: Declarable[_]*)
+
+  case class DeleteQueue(queue: DeclaredQueue, ifUnused: Boolean, ifEmpty: Boolean)
+  case class DeleteExchange(exchange: NamedExchange, ifUnused: Boolean)
 }
 
 private[amqp] class ChannelActor(settings: AmqpSettings)
-  extends Actor with FSM[ChannelState, Option[RabbitChannel]] with ShutdownListener {
-
+  extends Actor with FSM[ChannelState, ChannelData] with ShutdownListener with ChannelPublisher {
   //perhaps registered callbacks should be replaced with the akka.actor.Stash
   val registeredCallbacks = new collection.mutable.Queue[RabbitChannel ⇒ Unit]
   val serialization = SerializationExtension(context.system)
 
-  startWith(Unavailable, None)
+  //  /**
+  //   * allow us to use a variant of when that can target multiple states.
+  //   */
+  //  def whens(stateName: ChannelState*)(stateFunction: StateFunction): Unit = stateName foreach { when(_, null)(stateFunction) }
+  //
+  //  /**
+  //   * use to transition from Available to Unavailable
+  //   */
+  //  def toUnavailable = stateName match {
+  //    case AvailablePublisher             ⇒ UnavailablePublisher
+  //    case AvailableConfirmingPublisher   ⇒ UnavailableConfirmingPublisher
+  //    case AvailableConsumer              ⇒ UnavailableConsumer
+  //    case UnavailablePublisher           ⇒ UnavailablePublisher
+  //    case UnavailableConfirmingPublisher ⇒ UnavailableConfirmingPublisher
+  //    case UnavailableConsumer            ⇒ UnavailableConsumer
+  //  }
+  //
+  //  /**
+  //   * transition from Unavailable to Available
+  //   */
+  //  def toAvailable = stateName match {
+  //    case UnavailablePublisher           ⇒ AvailablePublisher
+  //    case UnavailableConfirmingPublisher ⇒ AvailableConfirmingPublisher
+  //    case UnavailableConsumer            ⇒ AvailableConsumer
+  //    case AvailablePublisher             ⇒ AvailablePublisher
+  //    case AvailableConfirmingPublisher   ⇒ AvailableConfirmingPublisher
+  //    case AvailableConsumer              ⇒ AvailableConsumer
+  //  }
+
+  startWith(Unavailable, ChannelData(None, BasicChannel))
 
   def publishToExchange(pub: PublishToExchange, channel: RabbitChannel): Option[Long] = {
     import pub._
@@ -88,40 +155,27 @@ private[amqp] class ChannelActor(settings: AmqpSettings)
   }
 
   when(Unavailable) {
-    case Event(RequestChannel(connection), _) ⇒
+    //    case Event(ConnectionConnected(channel), _) ⇒
+    //      cancelTimer("request-channel")
+    //      log.debug("Requesting channel from {}", connection)
+    //      try {
+    //        self ! connection.createChannel
+    //        stay()
+    //      } catch {
+    //        case ioe: IOException ⇒
+    //          log.error(ioe, "Error while requesting channel from connection {}", connection)
+    //          setTimer("request-channel", RequestChannel(connection), settings.channelReconnectTimeout, true)
+    //      }
+    case Event(NewChannel(channel), _ %: mode) ⇒
       cancelTimer("request-channel")
-      log.debug("Requesting channel from {}", connection)
-      try {
-        self ! connection.createChannel
-        stay()
-      } catch {
-        case ioe: IOException ⇒
-          log.error(ioe, "Error while requesting channel from connection {}", connection)
-          setTimer("request-channel", RequestChannel(connection), settings.channelReconnectTimeout, true)
-      }
-    case Event(ConnectionConnected(connection), _) ⇒
-      connection ! WithConnection(c ⇒ self ! RequestChannel(c))
-      stay()
-    case Event(channel: RabbitChannel, _) ⇒
       log.debug("Received channel {}", channel)
       channel.addShutdownListener(this)
       registeredCallbacks.foreach(_.apply(channel))
-      goto(Available) using Some(channel)
-    case Event(cause: ShutdownSignalException, _) ⇒
-      handleShutdown(cause)
+      goto(Available) using ChannelData(Some(channel), mode)
     case Event(WhenAvailable(callback), _) ⇒
       registeredCallbacks += callback
       stay()
-    case Event(mess: PublishToExchange, _) ⇒
-      val send = sender
 
-      registeredCallbacks += { channel: RabbitChannel ⇒
-        publishToExchange(mess, channel) match {
-          case Some(seqNo) ⇒ send ! seqNo
-          case None        ⇒
-        }
-      }
-      stay()
     case Event(WithChannel(callback), _) ⇒
       val send = sender //make it so the closure, can capture the sender
 
@@ -133,40 +187,46 @@ private[amqp] class ChannelActor(settings: AmqpSettings)
   }
 
   when(Available) {
-    case Event(mess: PublishToExchange, Some(channel)) ⇒
-      publishToExchange(mess, channel) match {
-        case Some(seqNo) ⇒ stay() replying seqNo
-        case None        ⇒ stay()
+    case Event(DeleteExchange(exchange, ifUnused), Some(channel) %: _) ⇒
+      channel.exchangeDelete(exchange.name, ifUnused)
+      stay()
+    case Event(DeleteQueue(queue, ifUnused, ifEmpty), Some(channel) %: _) ⇒
+      channel.queueDelete(queue.name, ifUnused, ifEmpty)
+      stay()
+    case Event(Declare(items @ _*), Some(channel) %: _) ⇒
+      items foreach {
+        declarable: Declarable[_] ⇒ sender ! declarable.declare(channel)
       }
-    case Event(ConnectionDisconnected(), Some(channel)) ⇒
+      stay()
+    case Event(ConnectionDisconnected, Some(channel) %: mode) ⇒
       log.warning("Connection went down of channel {}", channel)
-      goto(Unavailable) using None
-    case Event(OnlyIfAvailable(callback), Some(channel)) ⇒
+      goto(Unavailable) using None %: mode
+    case Event(OnlyIfAvailable(callback), Some(channel) %: _) ⇒
       callback.apply(channel)
       stay()
-    case Event(WithChannel(callback), Some(channel)) ⇒
+    case Event(WithChannel(callback), Some(channel) %: _) ⇒
       stay() replying callback.apply(channel)
-    case Event(cause: ShutdownSignalException, _) ⇒
-      handleShutdown(cause)
-    case Event(WhenAvailable(callback), channel) ⇒
+
+    case Event(WhenAvailable(callback), channel %: _) ⇒
       channel.foreach(callback.apply(_))
       stay()
   }
 
-  def handleShutdown(cause: ShutdownSignalException): State = {
-    if (cause.isHardError) { // connection error, await ConnectionDisconnected()
-      stay()
-    } else { // channel error
-      val channel = cause.getReference.asInstanceOf[RabbitChannel]
-      if (cause.isInitiatedByApplication) {
-        log.debug("Channel {} shutdown ({})", channel, cause.getMessage)
-        stop()
-      } else {
-        log.error(cause, "Channel {} broke down", channel)
-        setTimer("request-channel", RequestChannel(channel.getConnection), settings.channelReconnectTimeout, true)
-        goto(Unavailable) using None
+  whenUnhandled {
+    case Event(cause: ShutdownSignalException, _ %: mode) ⇒
+      if (cause.isHardError) { // connection error, await ConnectionDisconnected()
+        stay()
+      } else { // channel error
+        val channel = cause.getReference.asInstanceOf[RabbitChannel]
+        if (cause.isInitiatedByApplication) {
+          log.debug("Channel {} shutdown ({})", channel, cause.getMessage)
+          stop()
+        } else {
+          log.error(cause, "Channel {} broke down", channel)
+          context.parent ! RequestNewChannel //tell the connectionActor that a new channel is needed
+          goto(Unavailable) using None %: mode
+        }
       }
-    }
   }
 
   def shutdownCompleted(cause: ShutdownSignalException) {
@@ -174,7 +234,7 @@ private[amqp] class ChannelActor(settings: AmqpSettings)
   }
 
   onTermination {
-    case StopEvent(_, _, Some(channel)) ⇒
+    case StopEvent(_, _, Some(channel) %: _) ⇒
       if (channel.isOpen) {
         log.debug("Closing channel {}", channel)
         Exception.ignoring(classOf[AlreadyClosedException], classOf[ShutdownSignalException]) {

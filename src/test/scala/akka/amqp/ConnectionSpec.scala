@@ -89,6 +89,10 @@ class ValidConnectionSpec extends WordSpec with MustMatchers with BeforeAndAfter
       awaitCond(conn.isOpen() == false, 5 seconds, 100 milli)
       shutdown
     }
+    "send new channels to child Actors on reconnect" in pending
+    "send disconnect message to child Actors on disconnect" in pending
+    "send NewChannel message to child actor upon creation in Connected state" in pending
+    "do not send NewChannel message to child actor upon creation in Disconnected state" in pending
 
     "Durable Connection" should {
       "execute callback on connection when connected" in new AkkaScope {

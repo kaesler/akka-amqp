@@ -43,7 +43,7 @@ private[amqp] class ReconnectTimeoutGenerator {
     previousTimeout = 1
   }
 }
-private[akka] case class CreateChannel(persistent: Boolean)
+private[akka] case class CreateChannel(persistent: Boolean = false)
 
 class ConnectionActor private[amqp] (settings: AmqpSettings, isConnectedAgent: akka.agent.Agent[Boolean])
   extends Actor with FSM[ConnectionState, Option[RabbitConnection]] with ShutdownListener {
@@ -69,9 +69,20 @@ class ConnectionActor private[amqp] (settings: AmqpSettings, isConnectedAgent: a
     }
   })
 
+  def newChannelActor(persistent: Boolean) = context.actorOf {
+    if (persistent)
+      Props(new ChannelActor(settings) with DowntimeStash).withDispatcher("akka.amqp.stashing-dispatcher")
+    else
+      Props(new ChannelActor(settings))
+  }
+
   startWith(Disconnected, None)
 
   when(Disconnected) {
+    case Event(CreateChannel(persistent), _) ⇒
+      val channelActor = newChannelActor(persistent)
+      sender ! channelActor //return channelActor to sender, but in a disconnected state
+      stay()
     case Event(Connect, _) ⇒
       log.info("Connecting to one of [{}]", addresses.mkString(", "))
       try {
@@ -80,6 +91,7 @@ class ConnectionActor private[amqp] (settings: AmqpSettings, isConnectedAgent: a
         log.info("Successfully connected to {}", connection)
         cancelTimer("reconnect")
         timeoutGenerator.reset()
+
         goto(Connected) using Some(connection)
       } catch {
         case e: Exception ⇒
@@ -98,16 +110,15 @@ class ConnectionActor private[amqp] (settings: AmqpSettings, isConnectedAgent: a
   }
 
   when(Connected) {
+    case Event(RequestNewChannel, Some(connection)) ⇒
+      //a channel must have broken, send the ChannelActor back a new one.
+      sender ! NewChannel(connection.createChannel)
+      stay()
     case Event(CreateChannel(persistent), Some(connection)) ⇒
-      val props = if (persistent) {
-        Props(new ChannelActor(settings) with DowntimeStash).withDispatcher("akka.amqp.stashing-dispatcher")
-      } else {
-        Props(new ChannelActor(settings))
-      }
-      val channelActor = context.actorOf(props)
-      context.
-        self ! SubscribeTransitionCallBack(channelActor) //subscribe the channelActor to connection transitions
-      sender ! channelActor
+      val channelActor = newChannelActor(persistent)
+      //give the channelActor it's first channel
+      channelActor ! NewChannel(connection.createChannel)
+      sender ! channelActor //return channelActor to sender
       stay()
 
     case Event(WithConnection(callback), Some(connection)) ⇒
@@ -139,6 +150,18 @@ class ConnectionActor private[amqp] (settings: AmqpSettings, isConnectedAgent: a
 
   onTransition {
     case _ -> _ ⇒ isConnectedAgent send (bool ⇒ !bool) //notify the agent that we have changed states.
+    case Disconnected -> Connected ⇒
+      nextStateData match {
+        case Some(connection) ⇒
+          //send new channels to the child ChannelActors so they can reconnect
+          context.children foreach { _ ! NewChannel(connection.createChannel) }
+        case None ⇒ //should never happen 
+          throw new Exception("The Connected state should never be without a connection!")
+      }
+    case Connected -> Disconnected ⇒
+      //notify children of the disconnect
+      context.children foreach { _ ! ConnectionDisconnected }
+
   }
 
   initialize
@@ -160,21 +183,23 @@ class ConnectionActor private[amqp] (settings: AmqpSettings, isConnectedAgent: a
   }
 }
 
-private[amqp] object ConnectionConnected {
-  def unapply(msg: Any) = msg match {
-    case Transition(connection, _, Connected) ⇒ Some(connection)
-    case CurrentState(connection, Connected)  ⇒ Some(connection)
-    case _                                    ⇒ None
-  }
-}
-
-private[amqp] object ConnectionDisconnected {
-  def unapply(msg: Any) = msg match {
-    case Transition(_, _, Disconnected) ⇒ true
-    case CurrentState(_, Disconnected)  ⇒ true
-    case _                              ⇒ false
-  }
-}
+private[amqp] case class NewChannel(channel: RabbitChannel)
+private[amqp] object ConnectionDisconnected
+//private[amqp] object ConnectionConnected {
+//  def unapply(msg: Any) = msg match {
+//    case Transition(connection, _, Connected) ⇒ Some(connection)
+//    case CurrentState(connection, Connected)  ⇒ Some(connection)
+//    case _                                    ⇒ None
+//  }
+//}
+//
+//private[amqp] object ConnectionDisconnected {
+//  def unapply(msg: Any) = msg match {
+//    case Transition(_, _, Disconnected) ⇒ true
+//    case CurrentState(_, Disconnected)  ⇒ true
+//    case _                              ⇒ false
+//  }
+//}
 
 //trait ChannelBuilders {
 //  implicit val extension : AmqpExtensionImpl

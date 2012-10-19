@@ -1,4 +1,4 @@
-//package akka.amqp
+package akka.amqp
 //import Queue._
 //
 //import java.util.concurrent.atomic.AtomicReference
@@ -16,13 +16,13 @@
 //  def stop : Unit
 //} 
 //
-//case class ReturnedMessage(replyCode: Int,
-//                           replyText: String,
-//                           exchange: String,
-//                           routingKey: String,
-//                           properties: BasicProperties,
-//                           body: Array[Byte])
-//
+case class ReturnedMessage(replyCode: Int,
+                           replyText: String,
+                           exchange: String,
+                           routingKey: String,
+                           properties: BasicProperties,
+                           body: Array[Byte])
+
 //case class Delivery(payload: Array[Byte],
 //                    routingKey: String,
 //                    deliveryTag: Long,

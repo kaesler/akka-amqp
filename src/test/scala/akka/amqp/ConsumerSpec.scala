@@ -6,6 +6,11 @@
 //import scala.concurrent.util.duration._
 //import scala.concurrent.{ Await, Promise }
 //import akka.testkit.AkkaSpec
+//import akka.testkit.TestFSMRef
+//import ChannelActor._
+//import org.mockito.Matchers._
+//import org.mockito.Matchers
+//import org.mockito.Mockito._
 //
 //class ConsumerSpec extends AkkaSpec(AmqpConfig.Valid.config) {
 //
