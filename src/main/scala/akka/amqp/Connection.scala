@@ -69,11 +69,19 @@ class ConnectionActor private[amqp] (settings: AmqpSettings, isConnectedAgent: a
     }
   })
 
-  def newChannelActor(persistent: Boolean) = context.actorOf {
-    if (persistent)
-      Props(new ChannelActor(settings) with DowntimeStash).withDispatcher("akka.amqp.stashing-dispatcher")
+  /**
+   * Creates a new channel actor. By default this actor will be able to
+   *  stash messages if it gets disconnected. It will unstash them after reconnecting.
+   *
+   */
+  def newChannelActor(stashMessages: Boolean = true) = context.actorOf {
+    if (stashMessages)
+      Props(new ChannelActor(settings) with Stash).withDispatcher("akka.amqp.stashing-dispatcher")
     else
-      Props(new ChannelActor(settings))
+      Props(new ChannelActor(settings) {
+        def stash(): Unit = {}
+        def unstashAll(): Unit = {}
+      })
   }
 
   startWith(Disconnected, None)

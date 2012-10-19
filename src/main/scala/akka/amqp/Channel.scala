@@ -20,22 +20,7 @@ import akka.actor.Props
 import akka.actor.Stash
 import ChannelActor._
 import scala.concurrent.util.FiniteDuration
-///**
-// * Stores mess
-// */
-trait DowntimeStash extends Stash {
-  this: ChannelActor ⇒
 
-  when(Unavailable) {
-    case Event(channelCallback: OnlyIfAvailable, _) ⇒ //the downtime stash will stash the message until available
-      stash()
-      stay()
-  }
-
-  onTransition {
-    case Unavailable -> Available ⇒ unstashAll()
-  }
-}
 private[amqp] case object RequestNewChannel
 object ChannelActor {
 
@@ -47,16 +32,30 @@ object ChannelActor {
   sealed trait ChannelState
   case object Unavailable extends ChannelState
   case object Available extends ChannelState
-  case class ChannelData(channel: Option[RabbitChannel], mode: ChannelMode)
+
+  case class ChannelData private[amqp] (channel: Option[RabbitChannel], callbacks: Vector[RabbitChannel ⇒ Unit], mode: ChannelMode) {
+    def toUnavailable = ChannelData(None, callbacks, mode)
+    def toAvailable(channel: RabbitChannel) = ChannelData(Some(channel), callbacks, mode)
+    def addCallback(callback: RabbitChannel ⇒ Unit) = ChannelData(channel, callbacks :+ callback, mode)
+  }
 
   object %: {
-    def unapply(channelData: ChannelData): Option[(Option[RabbitChannel], ChannelMode)] = {
-      Some((channelData.channel, channelData.mode))
+    def unapply(channelData: ChannelData): Option[(Option[RabbitChannel], ChannelData0)] = {
+      import channelData._
+      Some((channel, ChannelData0(callbacks, mode)))
+    }
+    def unapply(channelData: ChannelData0): Option[(Vector[RabbitChannel ⇒ Unit], ChannelMode)] = {
+      import channelData._
+      Some((callbacks, mode))
     }
   }
 
+  private[amqp] case class ChannelData0(callbacks: Vector[RabbitChannel ⇒ Unit], mode: ChannelMode) {
+    def %:(channel: Option[RabbitChannel]): ChannelData = ChannelData(channel, callbacks, mode)
+  }
+
   sealed trait ChannelMode {
-    def %:(channel: Option[RabbitChannel]): ChannelData = ChannelData(channel, this)
+    def %:(callbacks: Vector[RabbitChannel ⇒ Unit]): ChannelData0 = ChannelData0(callbacks, this)
   }
   /**
    * A basicChannel may declare/delete Queues and Exchanges.
@@ -67,7 +66,13 @@ object ChannelActor {
   /**
    * The given listening ActorRef receives messages that are Returned or Confirmed
    */
-  case class Publisher(listener: ActorRef) extends ChannelMode
+  case class ConfirmingPublisher(listener: ActorRef) extends ChannelMode
+
+  /**
+   * The given listening ActorRef receives messages that are Returned
+   */
+  case class Publisher(listener: Option[ActorRef] = None) extends ChannelMode
+
   /**
    * The given listening ActorRef receives messages that are sent to the queue.
    */
@@ -80,10 +85,9 @@ object ChannelActor {
    */
 
   /**
-   * Message to Execute the given code when the Channel is first Received from the ConnectionActor
-   * Or immediately if the channel has already been received
+   * Code to execute whenever a new channel is received
    */
-  case class WhenAvailable(callback: RabbitChannel ⇒ Unit)
+  case class ExecuteOnNewChannel(callback: RabbitChannel ⇒ Unit)
 
   /**
    * Will execute only if the channel is currently available. Otherwise the message will be dropped.
@@ -100,12 +104,15 @@ object ChannelActor {
   case class DeleteQueue(queue: DeclaredQueue, ifUnused: Boolean, ifEmpty: Boolean)
   case class DeleteExchange(exchange: NamedExchange, ifUnused: Boolean)
 }
-
-private[amqp] class ChannelActor(settings: AmqpSettings)
-  extends Actor with FSM[ChannelState, ChannelData] with ShutdownListener with ChannelPublisher {
+//with ChannelPublisher
+private[amqp] abstract class ChannelActor(settings: AmqpSettings)
+  extends Actor with FSM[ChannelState, ChannelData] with ShutdownListener {
   //perhaps registered callbacks should be replaced with the akka.actor.Stash
-  val registeredCallbacks = new collection.mutable.Queue[RabbitChannel ⇒ Unit]
+  //val registeredCallbacks = new collection.Seq[RabbitChannel ⇒ Unit]
   val serialization = SerializationExtension(context.system)
+
+  def stash(): Unit
+  def unstashAll(): Unit
 
   //  /**
   //   * allow us to use a variant of when that can target multiple states.
@@ -136,23 +143,7 @@ private[amqp] class ChannelActor(settings: AmqpSettings)
   //    case AvailableConsumer              ⇒ AvailableConsumer
   //  }
 
-  startWith(Unavailable, ChannelData(None, BasicChannel))
-
-  def publishToExchange(pub: PublishToExchange, channel: RabbitChannel): Option[Long] = {
-    import pub._
-    log.debug("Publishing confirmed on '{}': {}", exchangeName, message)
-    import message._
-    val s = serialization.findSerializerFor(payload)
-    val serialized = s.toBinary(payload)
-    if (confirm) {
-      val seqNo = channel.getNextPublishSeqNo
-      channel.basicPublish(exchangeName, routingKey, mandatory, immediate, properties.getOrElse(null), serialized)
-      Some(seqNo)
-    } else {
-      channel.basicPublish(exchangeName, routingKey, mandatory, immediate, properties.getOrElse(null), serialized)
-      None
-    }
-  }
+  startWith(Unavailable, ChannelData(None, Vector.empty, BasicChannel))
 
   when(Unavailable) {
     //    case Event(ConnectionConnected(channel), _) ⇒
@@ -166,54 +157,49 @@ private[amqp] class ChannelActor(settings: AmqpSettings)
     //          log.error(ioe, "Error while requesting channel from connection {}", connection)
     //          setTimer("request-channel", RequestChannel(connection), settings.channelReconnectTimeout, true)
     //      }
-    case Event(NewChannel(channel), _ %: mode) ⇒
+    case Event(NewChannel(channel), _ %: callbacks %: mode) ⇒
       cancelTimer("request-channel")
       log.debug("Received channel {}", channel)
       channel.addShutdownListener(this)
-      registeredCallbacks.foreach(_.apply(channel))
-      goto(Available) using ChannelData(Some(channel), mode)
-    case Event(WhenAvailable(callback), _) ⇒
-      registeredCallbacks += callback
-      stay()
-
+      callbacks.foreach(_.apply(channel))
+      goto(Available) using stateData.toAvailable(channel)
     case Event(WithChannel(callback), _) ⇒
-      val send = sender //make it so the closure, can capture the sender
-
-      registeredCallbacks += { rc: RabbitChannel ⇒ send ! callback(rc) }
+      stash()
       stay()
     case Event(OnlyIfAvailable(callback), _) ⇒
-      //not available, dont execute
+      stay()
+
+    case Event(_: DeleteExchange, _) | Event(_: DeleteQueue, _) | Event(_: Declare, _) ⇒
+      stash()
       stay()
   }
 
   when(Available) {
-    case Event(DeleteExchange(exchange, ifUnused), Some(channel) %: _) ⇒
+    case Event(DeleteExchange(exchange, ifUnused), Some(channel) %: _ %: _) ⇒
       channel.exchangeDelete(exchange.name, ifUnused)
       stay()
-    case Event(DeleteQueue(queue, ifUnused, ifEmpty), Some(channel) %: _) ⇒
+    case Event(DeleteQueue(queue, ifUnused, ifEmpty), Some(channel) %: _ %: _) ⇒
       channel.queueDelete(queue.name, ifUnused, ifEmpty)
       stay()
-    case Event(Declare(items @ _*), Some(channel) %: _) ⇒
+    case Event(Declare(items @ _*), Some(channel) %: _ %: _) ⇒
       items foreach {
         declarable: Declarable[_] ⇒ sender ! declarable.declare(channel)
       }
       stay()
-    case Event(ConnectionDisconnected, Some(channel) %: mode) ⇒
+    case Event(ConnectionDisconnected, Some(channel) %: _ %: _) ⇒
       log.warning("Connection went down of channel {}", channel)
-      goto(Unavailable) using None %: mode
-    case Event(OnlyIfAvailable(callback), Some(channel) %: _) ⇒
+      goto(Unavailable) using stateData.toUnavailable
+    case Event(OnlyIfAvailable(callback), Some(channel) %: _ %: _) ⇒
       callback.apply(channel)
       stay()
-    case Event(WithChannel(callback), Some(channel) %: _) ⇒
+    case Event(WithChannel(callback), Some(channel) %: _ %: _) ⇒
       stay() replying callback.apply(channel)
-
-    case Event(WhenAvailable(callback), channel %: _) ⇒
-      channel.foreach(callback.apply(_))
-      stay()
   }
 
   whenUnhandled {
-    case Event(cause: ShutdownSignalException, _ %: mode) ⇒
+    case Event(ExecuteOnNewChannel(callback), _) ⇒
+      stay() using stateData.addCallback(callback)
+    case Event(cause: ShutdownSignalException, _ %: callbacks %: mode) ⇒
       if (cause.isHardError) { // connection error, await ConnectionDisconnected()
         stay()
       } else { // channel error
@@ -224,9 +210,13 @@ private[amqp] class ChannelActor(settings: AmqpSettings)
         } else {
           log.error(cause, "Channel {} broke down", channel)
           context.parent ! RequestNewChannel //tell the connectionActor that a new channel is needed
-          goto(Unavailable) using None %: mode
+          goto(Unavailable) using stateData.toUnavailable
         }
       }
+  }
+
+  onTransition {
+    case Unavailable -> Available ⇒ unstashAll()
   }
 
   def shutdownCompleted(cause: ShutdownSignalException) {
@@ -234,7 +224,7 @@ private[amqp] class ChannelActor(settings: AmqpSettings)
   }
 
   onTermination {
-    case StopEvent(_, _, Some(channel) %: _) ⇒
+    case StopEvent(_, _, Some(channel) %: _ %: _) ⇒
       if (channel.isOpen) {
         log.debug("Closing channel {}", channel)
         Exception.ignoring(classOf[AlreadyClosedException], classOf[ShutdownSignalException]) {
