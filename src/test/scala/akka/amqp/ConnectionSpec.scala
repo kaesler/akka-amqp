@@ -4,7 +4,7 @@ import akka.actor.FSM.{ UnsubscribeTransitionCallBack, CurrentState, Transition,
 import akka.dispatch.{ Terminate }
 import akka.testkit.{ AkkaSpec, TestKit, TestFSMRef }
 import akka.actor.{ ActorSystem, PoisonPill }
-import scala.concurrent.util.duration._
+import scala.concurrent.duration._
 import scala.concurrent.{ Await }
 import com.typesafe.config.ConfigFactory
 import scala.concurrent.Promise

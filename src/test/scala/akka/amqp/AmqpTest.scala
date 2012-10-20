@@ -7,10 +7,13 @@ import org.mockito.Matchers._
 import org.mockito.invocation.InvocationOnMock
 import akka.testkit.TestKit
 import scala.concurrent.Await
-import scala.concurrent.util.Duration
-import scala.concurrent.util.duration._
+import scala.concurrent.duration._
 import scala.concurrent.Future
 import reflect.ClassTag
+import akka.testkit.TestFSMRef
+import akka.testkit.AkkaSpec
+import akka.agent.Agent
+
 trait AmqpTest {
   import akka.actor._
   import akka.pattern.ask

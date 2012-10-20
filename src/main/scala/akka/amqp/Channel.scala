@@ -10,8 +10,7 @@ import akka.event.Logging
 import akka.pattern.ask
 import akka.serialization.SerializationExtension
 import akka.amqp.Message._
-import scala.concurrent.util.duration._
-import scala.concurrent.util.Duration
+import scala.concurrent.duration._
 import scala.concurrent.{ Await, Future }
 import scala.concurrent.{ ExecutionContext, Promise }
 import reflect.ClassTag
@@ -19,7 +18,6 @@ import akka.serialization.SerializationExtension
 import akka.actor.Props
 import akka.actor.Stash
 import ChannelActor._
-import scala.concurrent.util.FiniteDuration
 
 private[amqp] case object RequestNewChannel
 object ChannelActor {
@@ -37,6 +35,12 @@ object ChannelActor {
     def toUnavailable = ChannelData(None, callbacks, mode)
     def toAvailable(channel: RabbitChannel) = ChannelData(Some(channel), callbacks, mode)
     def addCallback(callback: RabbitChannel ⇒ Unit) = ChannelData(channel, callbacks :+ callback, mode)
+    def toMode(mode: ChannelMode) = ChannelData(channel, callbacks, mode)
+
+    def isConfirmingPublisher = mode.isInstanceOf[ConfirmingPublisher]
+    def isPublisher = mode.isInstanceOf[Publisher]
+    def isConsumer = mode.isInstanceOf[Consumer]
+    //def toBasicChannel -- Should not be implemented.  The 
   }
 
   object %: {
@@ -113,9 +117,9 @@ object ChannelActor {
     })
 
 }
-//with ChannelPublisher
-private[amqp] abstract class ChannelActor(settings: AmqpSettings)
-  extends Actor with FSM[ChannelState, ChannelData] with ShutdownListener {
+
+private[amqp] abstract class ChannelActor(protected val settings: AmqpSettings)
+  extends Actor with FSM[ChannelState, ChannelData] with ShutdownListener with ChannelPublisher {
   //perhaps registered callbacks should be replaced with the akka.actor.Stash
   //val registeredCallbacks = new collection.Seq[RabbitChannel ⇒ Unit]
   val serialization = SerializationExtension(context.system)
@@ -206,22 +210,24 @@ private[amqp] abstract class ChannelActor(settings: AmqpSettings)
   }
 
   whenUnhandled {
-    case Event(ExecuteOnNewChannel(callback), _) ⇒
-      stay() using stateData.addCallback(callback)
-    case Event(cause: ShutdownSignalException, _ %: callbacks %: mode) ⇒
-      if (cause.isHardError) { // connection error, await ConnectionDisconnected()
-        stay()
-      } else { // channel error
-        val channel = cause.getReference.asInstanceOf[RabbitChannel]
-        if (cause.isInitiatedByApplication) {
-          log.debug("Channel {} shutdown ({})", channel, cause.getMessage)
-          stop()
-        } else {
-          log.error(cause, "Channel {} broke down", channel)
-          context.parent ! RequestNewChannel //tell the connectionActor that a new channel is needed
-          goto(Unavailable) using stateData.toUnavailable
+    publisherUnhandled orElse {
+      case Event(ExecuteOnNewChannel(callback), _) ⇒
+        stay() using stateData.addCallback(callback)
+      case Event(cause: ShutdownSignalException, _ %: callbacks %: mode) ⇒
+        if (cause.isHardError) { // connection error, await ConnectionDisconnected()
+          stay()
+        } else { // channel error
+          val channel = cause.getReference.asInstanceOf[RabbitChannel]
+          if (cause.isInitiatedByApplication) {
+            log.debug("Channel {} shutdown ({})", channel, cause.getMessage)
+            stop()
+          } else {
+            log.error(cause, "Channel {} broke down", channel)
+            context.parent ! RequestNewChannel //tell the connectionActor that a new channel is needed
+            goto(Unavailable) using stateData.toUnavailable
+          }
         }
-      }
+    }
   }
 
   onTransition {

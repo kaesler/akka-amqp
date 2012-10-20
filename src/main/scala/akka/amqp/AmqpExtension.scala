@@ -1,5 +1,6 @@
 package akka.amqp
 
+import scala.language.implicitConversions
 import akka.actor._
 import com.typesafe.config.Config
 import akka.actor.ExtensionIdProvider
@@ -11,8 +12,7 @@ import scala.concurrent.Await
 import reflect.ClassTag
 import akka.agent.Agent
 import akka.pattern.ask
-import scala.concurrent.util.Duration
-import scala.concurrent.util.duration._
+import scala.concurrent.duration._
 object AmqpExtension extends ExtensionId[AmqpExtensionImpl] with ExtensionIdProvider {
 
   override def lookup() = this
@@ -45,20 +45,19 @@ class AmqpExtensionImpl(implicit val _system: ActorSystem) extends Extension {
 }
 
 class AmqpSettings(config: Config) {
-  import scala.concurrent.util.duration._
-  import scala.concurrent.util.Duration
+  import scala.concurrent.duration
   import scala.collection.JavaConverters._
-
+  //durationIn
   val addresses: Seq[String] = config.getStringList("addresses").asScala.toSeq
   val user: String = config.getString("user")
   val pass: String = config.getString("pass")
   val vhost: String = config.getString("vhost")
-  val amqpHeartbeat: Duration = longToDurationLong(config.getMilliseconds("heartbeat")).milli
-  val maxReconnectDelay: Duration = longToDurationLong(config.getMilliseconds("max-reconnect-delay")).milli
+  val amqpHeartbeat: FiniteDuration = DurationLong(config.getMilliseconds("heartbeat")).milli
+  val maxReconnectDelay: Duration = DurationLong(config.getMilliseconds("max-reconnect-delay")).milli
   val channelThreads: Int = config.getInt("channel-threads")
-  val interactionTimeout: Duration = longToDurationLong(config.getMilliseconds("interaction-timeout")).milli
-  val channelCreationTimeout: Duration = longToDurationLong(config.getMilliseconds("channel-creation-timeout")).milli
-  val channelReconnectTimeout: Duration = longToDurationLong(config.getMilliseconds("channel-reconnect-timeout")).milli
-  val publisherConfirmTimeout: Duration = longToDurationLong(config.getMilliseconds("publisher-confirm-timeout")).milli
+  val interactionTimeout: Duration = DurationLong(config.getMilliseconds("interaction-timeout")).milli
+  val channelCreationTimeout: Duration = DurationLong(config.getMilliseconds("channel-creation-timeout")).milli
+  val channelReconnectTimeout: Duration = DurationLong(config.getMilliseconds("channel-reconnect-timeout")).milli
+  val publisherConfirmTimeout: FiniteDuration = DurationLong(config.getMilliseconds("publisher-confirm-timeout")).milli
 }
 

@@ -3,7 +3,7 @@ package akka.amqp
 import akka.actor.FSM.Transition
 import akka.actor.ActorSystem
 import akka.testkit.{ AkkaSpec, TestLatch, TestKit, TestFSMRef }
-import scala.concurrent.util.duration._
+import scala.concurrent.duration._
 import scala.concurrent.Await
 import org.mockito.Matchers._
 import org.mockito.Matchers
@@ -30,7 +30,7 @@ class ChannelSpec extends AkkaSpec(AmqpConfig.Valid.config) with AmqpMock {
       channelActor ! NewChannel(channel) // 5x WithChannel and 5x ExecuteOnNewChannel
       channelActor ! NewChannel(channel) //5x ExecuteOnNewChannel
       Await.ready(latch, 5 seconds).isOpen must be === true
-      channelActor.stateName must be === Available
+      awaitCond(channelActor.stateName == Available, 5 seconds, 300 millis)
     }
     "register callback (ExecuteOnNewChannel) and do not execute until receiving a newChannel" in {
       channelActor.stateName must be === Available

@@ -2,8 +2,7 @@ package akka.amqp
 import scala.concurrent.Future
 import akka.actor.FSM.{ CurrentState, Transition, SubscribeTransitionCallBack }
 import scala.concurrent.{ ExecutionContext, Promise }
-import scala.concurrent.util.duration._
-import scala.concurrent.util.Duration
+import scala.concurrent.duration._
 import java.lang.Thread
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.{ ThreadFactory, Executors }
