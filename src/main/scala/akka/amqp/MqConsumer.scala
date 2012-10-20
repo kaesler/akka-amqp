@@ -1,4 +1,4 @@
-//package akka.amqp
+package akka.amqp
 //
 //import akka.actor.Actor
 //import akka.actor.ActorSystem
@@ -10,6 +10,13 @@
 //import akka.actor.Props
 //import akka.actor.PoisonPill
 //
+//
+//trait Initializer {
+//  def Queue : option
+//  def Exchange ?: option
+//  def Queubinding : List
+//} 
+
 //case object QueueBound
 //case class QueueBindFailure(exception:IOException)
 //

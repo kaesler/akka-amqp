@@ -103,6 +103,15 @@ object ChannelActor {
 
   case class DeleteQueue(queue: DeclaredQueue, ifUnused: Boolean, ifEmpty: Boolean)
   case class DeleteExchange(exchange: NamedExchange, ifUnused: Boolean)
+
+  private[amqp] def apply(stashMessages: Boolean, settings: AmqpSettings) = if (stashMessages)
+    Props(new ChannelActor(settings) with Stash).withDispatcher("akka.amqp.stashing-dispatcher")
+  else
+    Props(new ChannelActor(settings) {
+      def stash(): Unit = {}
+      def unstashAll(): Unit = {}
+    })
+
 }
 //with ChannelPublisher
 private[amqp] abstract class ChannelActor(settings: AmqpSettings)

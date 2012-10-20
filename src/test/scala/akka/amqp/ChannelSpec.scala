@@ -13,46 +13,54 @@ class ChannelSpec extends AkkaSpec(AmqpConfig.Valid.config) with AmqpMock {
 
   "Durable Channel Actor" should {
     //  implicit val system = ActorSystem("channelspec")
-    val channelActor = TestFSMRef(new ChannelActor(AmqpConfig.Valid.settings))
+    val channelActor = TestFSMRef(new ChannelActor(AmqpConfig.Valid.settings) {
+      def stash(): Unit = {}
+      def unstashAll(): Unit = {}
+    })
 
-    "start in state UnavailablePublisher" in {
-      channelActor.stateName must be === UnavailablePublisher
+    "start in state Unavailable" in {
+      channelActor.stateName must be === Unavailable
     }
-        
+
     "execute registered callbacks and become Available when receiving a Channel" in {
-      channelActor.stateName must be === UnavailablePublisher
-      val latch = TestLatch(10)
-      for (i ← 1 to 5) channelActor ! WhenAvailable(c ⇒ latch.open())
+      channelActor.stateName must be === Unavailable
+      val latch = TestLatch(15)
+      for (i ← 1 to 5) channelActor ! ExecuteOnNewChannel(c ⇒ latch.open())
       for (i ← 1 to 5) channelActor ! WithChannel(c ⇒ latch.open())
-      channelActor ! NewChannel(channel)
+      channelActor ! NewChannel(channel) // 5x WithChannel and 5x ExecuteOnNewChannel
+      channelActor ! NewChannel(channel) //5x ExecuteOnNewChannel
       Await.ready(latch, 5 seconds).isOpen must be === true
-      channelActor.stateName must be === AvailablePublisher
+      channelActor.stateName must be === Available
     }
-    "register callback (WhenAvailable) and execute immediately when Available" in {
-      channelActor.stateName must be === AvailablePublisher
+    "register callback (ExecuteOnNewChannel) and do not execute until receiving a newChannel" in {
+      channelActor.stateName must be === Available
       val latch = TestLatch()
-      channelActor ! WhenAvailable(c ⇒ latch.open())
+      channelActor ! ExecuteOnNewChannel(c ⇒ latch.open())
+      latch.isOpen must be === false
+      channelActor ! NewChannel(channel) // ExecuteOnNewChannel
+      latch.isOpen must be === false
+      channelActor ! ConnectionDisconnected
+      latch.isOpen must be === false
+      channelActor ! NewChannel(channel) // ExecuteOnNewChannel
       Await.ready(latch, 5 seconds).isOpen must be === true
     }
 
     "register future (WithChannel) and execute immediately when Available" in {
-      channelActor.stateName must be === AvailablePublisher
+      channelActor.stateName must be === Available
       val latch = TestLatch()
       channelActor ! WithChannel(c ⇒ latch.open())
       Await.ready(latch, 5 seconds).isOpen must be === true
     }
 
-  
-
     "request new channel when channel brakes and go to Unavailble" in {
       channelActor ! new ShutdownSignalException(false, false, "Test", channel)
-      channelActor.stateName must be === UnavailablePublisher
+      channelActor.stateName must be === Unavailable
     }
     "go to Unavailable when connection disconnects" in new TestKit(system) with AmqpMock {
-      channelActor.setState(AvailablePublisher, Some(channel))
+      channelActor.setState(Available, ChannelData(Some(channel), Vector.empty, BasicChannel))
       channelActor ! ConnectionDisconnected
-      channelActor.stateName must be === UnavailablePublisher
+      channelActor.stateName must be === Unavailable
     }
-    
+
   }
 }

@@ -75,13 +75,7 @@ class ConnectionActor private[amqp] (settings: AmqpSettings, isConnectedAgent: a
    *
    */
   def newChannelActor(stashMessages: Boolean = true) = context.actorOf {
-    if (stashMessages)
-      Props(new ChannelActor(settings) with Stash).withDispatcher("akka.amqp.stashing-dispatcher")
-    else
-      Props(new ChannelActor(settings) {
-        def stash(): Unit = {}
-        def unstashAll(): Unit = {}
-      })
+    ChannelActor(stashMessages, settings)
   }
 
   startWith(Disconnected, None)
