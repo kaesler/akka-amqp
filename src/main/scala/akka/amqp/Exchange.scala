@@ -11,6 +11,13 @@ object Exchange {
 sealed trait Exchange {
   val name: String
   val params: Option[ExchangeParams]
+  /**
+   * start the binding process to bind this Queue to an Exchange
+   */
+  def >>(queue: Queue) = QueueBinding0(this, queue)
+  def >>(destination: Exchange)(routingKey: String)(arguments: Option[Map[String, AnyRef]] = None) = {
+    ExchangeToExchangeBinding(this, destination, routingKey, arguments)
+  }
 }
 
 case class ExchangeParams private[amqp] (exchangeType: String,
@@ -60,13 +67,6 @@ case object NamelessExchange extends DeclaredExchange {
 }
 
 case class NamedExchange private[amqp] (val name: String, val peer: RabbitExchange.DeclareOk, val params: Option[ExchangeParams] = None) extends DeclaredExchange {
-  /**
-   * start the binding process to bind this Queue to an Exchange
-   */
-  def >>(queue: Queue) = QueueBinding0(this, queue)
-  def >>(destination: Exchange)(routingKey: String)(arguments: Option[Map[String, AnyRef]] = None) = {
-    ExchangeToExchangeBinding(this, destination, routingKey, arguments)
-  }
 
 }
 

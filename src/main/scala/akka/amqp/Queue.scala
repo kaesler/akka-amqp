@@ -37,6 +37,7 @@ class QueueDeclarationMode private[amqp] (val name: String) {
 trait Queue {
   def nameOption: Option[String]
   def params: Option[QueueParams]
+  def isUndeclaredDefaultQueue = nameOption.isEmpty
 }
 trait UndeclaredQueue extends Declarable[DeclaredQueue] { queue: Queue ⇒
   def declare(implicit channel: RabbitChannel): DeclaredQueue
@@ -87,42 +88,60 @@ case class DeclaredQueue(peer: RabbitQueue.DeclareOk, params: Option[QueueParams
 
 }
 
-trait QueueBinding extends Declarable[RabbitQueue.BindOk] {
+trait QueueBinding extends Declarable[DeclaredQueueBinding] {
   def exchange: Exchange
   def queue: Queue
   def routingKey: String
-
-  def declaredExchange(implicit channel: RabbitChannel): DeclaredExchange = {
+  def getArgs: Option[Seq[(String, AnyRef)]]
+  protected def declaredExchange(implicit channel: RabbitChannel): DeclaredExchange = {
     exchange match {
       case ed: UndeclaredExchange             ⇒ ed.declare
       case declaredExchange: DeclaredExchange ⇒ declaredExchange
     }
   }
 
-  def declaredQueue(implicit channel: RabbitChannel): DeclaredQueue = {
+  protected def declaredQueue(implicit channel: RabbitChannel): DeclaredQueue = {
     queue match {
       case ed: UndeclaredQueue          ⇒ ed.declare
       case declaredQueue: DeclaredQueue ⇒ declaredQueue
     }
   }
 
+  protected def doDeclare(arguments: Option[Seq[(String, AnyRef)]])(implicit channel: RabbitChannel): DeclaredQueueBinding = {
+    val q = declaredQueue
+    val e = declaredExchange
+    if (e.name != "") { //do not queueBind when using the nameless Exchange
+      val args = arguments.map(_.toMap.asJava)
+      val ok = channel.queueBind(q.name, e.name, routingKey, args.getOrElse(null))
+      DeclaredQueueBinding(Some(ok), q, e)
+    } else DeclaredQueueBinding(None, q, e)
+
+  }
+
   /**
-   * Will bind a Queue to an Exchange. If the given Queue or Exchange has not yet been declared
-   * ,it is a Declaration, then that Queue or Exchange will be declared.
+   * Will bind a Queue to an Exchange (if not using nameless Exchange).
+   * If the given Queue or Exchange has not yet been declared then that Queue or Exchange will be declared.
    */
-  def declare(implicit channel: RabbitChannel): RabbitQueue.BindOk
+  def declare(implicit channel: RabbitChannel): DeclaredQueueBinding
 }
 
-case class QueueBinding0(exchange: Exchange, queue: Queue) {
+case class DeclaredQueueBinding(ok: Option[RabbitQueue.BindOk], queue: DeclaredQueue, exchange: DeclaredExchange)
+
+case class QueueBinding0(exchange: Exchange, queue: Queue) extends QueueBinding {
+  def getArgs = None
+  def routingKey = ""
   def :=(routingKey: String) = QueueBinding1(exchange, queue, routingKey)
+  def declare(implicit channel: RabbitChannel) = doDeclare(None)
 }
 
 case class QueueBinding1(exchange: Exchange, queue: Queue, routingKey: String) extends QueueBinding {
-  def declare(implicit channel: RabbitChannel) = channel.queueBind(declaredQueue.name, declaredExchange.name, routingKey, null)
+  def declare(implicit channel: RabbitChannel) = doDeclare(None)
+  def getArgs = None
   def args(arguments: (String, AnyRef)*) = QueueBinding2(exchange, queue, routingKey, arguments: _*)
 }
 
 case class QueueBinding2(exchange: Exchange, queue: Queue, routingKey: String, arguments: (String, AnyRef)*) extends QueueBinding {
-  def declare(implicit channel: RabbitChannel) =
-    channel.queueBind(declaredQueue.name, declaredExchange.name, routingKey, arguments.toMap.asJava)
+  def getArgs = Some(arguments)
+  def declare(implicit channel: RabbitChannel) = doDeclare(Some(arguments))
+
 }

@@ -60,7 +60,7 @@ class PublisherSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
     }
     "kill channel when publishing on non existing exchange" in new PublisherScope {
       val exchange = Exchange("does-not-exist")
-
+     //this test seems to be unstable, run it enough and it will fail.
       try {
         channelActor ! Declare(exchange.active("direct"))
         expectMsgType[NamedExchange]

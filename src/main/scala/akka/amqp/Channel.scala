@@ -39,7 +39,7 @@ object ChannelActor {
 
     def isConfirmingPublisher = mode.isInstanceOf[ConfirmingPublisher]
     def isPublisher = mode.isInstanceOf[Publisher]
-    def isConsumer = mode.isInstanceOf[Consumer]
+    def isConsumer = mode.isInstanceOf[ConsumerMode]
     //def toBasicChannel -- Should not be implemented.  The 
   }
 
@@ -80,7 +80,11 @@ object ChannelActor {
   /**
    * The given listening ActorRef receives messages that are sent to the queue.
    */
-  case class Consumer(listener: ActorRef, queue: DeclaredQueue) extends ChannelMode
+  case class Consumer(listener: ActorRef, autoAck: Boolean, binding: Seq[QueueBinding])
+
+  case class ConsumerMode(listener: ActorRef, tags: Seq[String]) extends ChannelMode {
+
+  }
 
   /**
    * ****************************************
@@ -119,7 +123,8 @@ object ChannelActor {
 }
 
 private[amqp] abstract class ChannelActor(protected val settings: AmqpSettings)
-  extends Actor with FSM[ChannelState, ChannelData] with ShutdownListener with ChannelPublisher {
+  extends Actor with FSM[ChannelState, ChannelData] with ShutdownListener
+  with ChannelPublisher with ChannelConsumer {
   //perhaps registered callbacks should be replaced with the akka.actor.Stash
   //val registeredCallbacks = new collection.Seq[RabbitChannel ⇒ Unit]
   val serialization = SerializationExtension(context.system)
@@ -238,14 +243,20 @@ private[amqp] abstract class ChannelActor(protected val settings: AmqpSettings)
     self ! cause
   }
 
+  def terminateWhenActive(channel: RabbitChannel) = {
+
+    log.debug("Closing channel {}", channel)
+    Exception.ignoring(classOf[AlreadyClosedException], classOf[ShutdownSignalException]) {
+      channel.close()
+    }
+
+  }
+
   onTermination {
-    case StopEvent(_, _, Some(channel) %: _ %: _) ⇒
-      if (channel.isOpen) {
-        log.debug("Closing channel {}", channel)
-        Exception.ignoring(classOf[AlreadyClosedException], classOf[ShutdownSignalException]) {
-          channel.close()
-        }
-      }
+    consumerTermination orElse {
+      case StopEvent(_, _, Some(channel) %: _ %: _) ⇒
+        terminateWhenActive(channel)
+    }
   }
 }
 
