@@ -23,12 +23,12 @@ case class Message(payload: AnyRef,
 //case object Normal extends PublishMode
 case class PublishToExchange(message: Message, exchangeName: String, confirm: Boolean = false)
 
-/**
- * add a new Returnlistener to be notified of failed deliveries when
- * PublishToExchange is used with "mandatory" or "immediate" flags set.
- * The ReturnListener actor will receive ReturnedMessage objects
- */
-case class AddReturnListener(returnListener: ActorRef)
+///**
+// * add a new Returnlistener to be notified of failed deliveries when
+// * PublishToExchange is used with "mandatory" or "immediate" flags set.
+// * The ReturnListener actor will receive ReturnedMessage objects
+// */
+//case class AddReturnListener(returnListener: ActorRef)
 
 sealed trait Confirm
 case object Ack extends Confirm
@@ -50,9 +50,9 @@ trait ChannelPublisher extends ConfirmListener { actor: ChannelActor ⇒
     }
   }
 
-  def setupConfirmingPublisher(channel: RabbitChannel, listener: ActorRef) = {
+  def setupConfirmingPublisher(channel: RabbitChannel, listener: Option[ActorRef]) = {
     channel.confirmSelect()
-    addReturnListener(channel, listener)
+    listener foreach { addReturnListener(channel, _) }
     channel.addConfirmListener(this)
   }
 

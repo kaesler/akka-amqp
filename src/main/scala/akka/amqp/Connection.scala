@@ -42,7 +42,7 @@ private[amqp] class ReconnectTimeoutGenerator {
     previousTimeout = 1
   }
 }
-private[akka] case class CreateChannel(persistent: Boolean = false)
+private[akka] case class CreateChannel(stashMessages: Boolean = false)
 
 class ConnectionActor private[amqp] (settings: AmqpSettings, isConnectedAgent: akka.agent.Agent[Boolean])
   extends Actor with FSM[ConnectionState, Option[RabbitConnection]] with ShutdownListener {
@@ -80,8 +80,8 @@ class ConnectionActor private[amqp] (settings: AmqpSettings, isConnectedAgent: a
   startWith(Disconnected, None)
 
   when(Disconnected) {
-    case Event(CreateChannel(persistent), _) ⇒
-      val channelActor = newChannelActor(persistent)
+    case Event(CreateChannel(stashMessages), _) ⇒
+      val channelActor = newChannelActor(stashMessages)
       sender ! channelActor //return channelActor to sender, but in a disconnected state
       stay()
     case Event(Connect, _) ⇒

@@ -70,7 +70,7 @@ object ChannelActor {
   /**
    * The given listening ActorRef receives messages that are Returned or Confirmed
    */
-  case class ConfirmingPublisher(listener: ActorRef) extends ChannelMode
+  case class ConfirmingPublisher(listener: Option[ActorRef] = None) extends ChannelMode
 
   /**
    * The given listening ActorRef receives messages that are Returned
