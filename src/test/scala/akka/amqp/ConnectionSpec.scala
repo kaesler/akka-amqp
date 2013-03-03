@@ -11,12 +11,14 @@ import scala.concurrent.Promise
 import akka.pattern.ask
 import org.scalatest.{ WordSpec, BeforeAndAfterAll, Tag, BeforeAndAfter }
 import org.scalatest.matchers.MustMatchers
+
+import scala.concurrent.ExecutionContext.Implicits.global
 class ValidConnectionSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
 
   abstract class AkkaScope extends AkkaSpec(AmqpConfig.Valid.config) with AmqpTest {
-    val connectionStatusAgent = Agent(false)(system)
+    val connectionStatusAgent = Agent(false)
     val connectionActor = TestFSMRef(new ConnectionActor(AmqpConfig.Valid.settings, connectionStatusAgent))
-    def isConnected = connectionStatusAgent.await(5 seconds)
+    def isConnected = Await.result(connectionStatusAgent.future, 5 seconds)
 
     /**
      * If akkaSpec is used in a scope, it's ActorSystem must be shutdown manually, call this at the end of each scope
@@ -131,7 +133,7 @@ class ValidConnectionSpec extends WordSpec with MustMatchers with BeforeAndAfter
 class NoConnectionSpec extends AkkaSpec(AmqpConfig.Invalid.config) {
   "Durable Connection" should {
     "never connect using non existing host addresses" in {
-      val connectionStatusAgent = akka.agent.Agent(false)(system)
+      val connectionStatusAgent = akka.agent.Agent(false)
       val connectionActor = TestFSMRef(new ConnectionActor(AmqpConfig.Invalid.settings, connectionStatusAgent))
       try {
         connectionActor ! Connect

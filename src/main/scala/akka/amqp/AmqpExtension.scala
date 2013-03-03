@@ -13,6 +13,9 @@ import reflect.ClassTag
 import akka.agent.Agent
 import akka.pattern.ask
 import scala.concurrent.duration._
+
+import scala.concurrent.ExecutionContext.Implicits.global
+
 object AmqpExtension extends ExtensionId[AmqpExtensionImpl] with ExtensionIdProvider {
 
   override def lookup() = this
@@ -23,7 +26,7 @@ class AmqpExtensionImpl(implicit val _system: ActorSystem) extends Extension {
   implicit val settings = new AmqpSettings(_system.settings.config.getConfig("akka.amqp.default"))
   implicit val extension = this
 
-  protected val connectionStatusAgent = Agent(false)(_system)
+  protected val connectionStatusAgent = Agent(false)
   def isConnected = connectionStatusAgent.get
 
   val connectionActor = _system.actorOf(Props(new ConnectionActor(settings, connectionStatusAgent)), "amqp-connection")

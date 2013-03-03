@@ -47,7 +47,7 @@ object AkkaAmqpBuild extends Build {
 	      Specs2,
         JUnit,
 		Scalatest,
-		scalaActorsForScalaTest,
+	//	scalaActorsForScalaTest,
 		//ActorTests,
         AkkaTestKit,
         Mockito)
