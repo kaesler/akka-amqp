@@ -5,13 +5,13 @@ import com.typesafe.sbt.SbtScalariform.ScalariformKeys
 
 object AkkaAmqpBuild extends Build {
   import dependencies._
- 
+
 
     lazy val formatSettings = SbtScalariform.scalariformSettings ++ Seq(
     ScalariformKeys.preferences in Compile := formattingPreferences,
     ScalariformKeys.preferences in Test    := formattingPreferences
   )
-  
+
   def formattingPreferences = {
     import scalariform.formatter.preferences._
     FormattingPreferences()
@@ -19,13 +19,13 @@ object AkkaAmqpBuild extends Build {
     .setPreference(AlignParameters, true)
     .setPreference(AlignSingleLineCaseStatements, true)
   }
-  
+
   lazy val standardSettings = Project.defaultSettings ++ formatSettings ++ Seq(
   	resolvers += "Typesafe Repo" at "http://repo.typesafe.com/typesafe/releases/",
     resolvers += "Sonatype OSS Snapshots" at "http://oss.sonatype.org/content/repositories/releases/",
     organization := "com.github.cessationoftime",
     version			 := "2.2-SNAPSHOT",
-    scalaVersion := "2.10.0"
+    scalaVersion := "2.10.3"
   )
 
   //  lazy val amqp = Project(
@@ -36,21 +36,21 @@ object AkkaAmqpBuild extends Build {
   //    libraryDependencies ++= Dependencies.amqp
   //  )
  // )
-  
+
   lazy val root = Project(
-    id        = "akka-amqp",
-    base      = file("."),
-    settings = standardSettings ++ Seq(
-    	libraryDependencies ++= Seq( 
+      id        = "akka-amqp",
+      base      = file("."),
+      settings = standardSettings ++ Seq(
+    	  libraryDependencies ++= Seq(
 	      AmqpClient,
-		AkkaAgent,
+	      AkkaAgent,
 	      Specs2,
-        JUnit,
-		Scalatest,
-		scalaActorsForScalaTest,
-		//ActorTests,
-        AkkaTestKit,
-        Mockito)
+              JUnit,
+	      Scalatest,
+	      scalaActorsForScalaTest,
+	      //ActorTests,
+              AkkaTestKit,
+              Mockito)
+        )
     )
-  )
 }
