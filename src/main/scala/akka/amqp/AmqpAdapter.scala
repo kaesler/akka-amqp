@@ -20,20 +20,8 @@ class AmqpAdapter(settings: AmqpSettings, implicit val _system: ActorSystem) {
 
   val connectionActor = _system.actorOf(Props(new ConnectionActor(settings, connectionStatusAgent)), "amqp-connection")
 
-  def createChannel = {
+  def createChannel(): Future[ActorRef] = {
     implicit val to = akka.util.Timeout(5 seconds)
     (connectionActor ? CreateChannel()).mapTo[ActorRef]
-  }
-
-  def withTempChannel[T: ClassTag](callback: RabbitChannel ⇒ T): Future[T] = {
-    ???
-    //    withConnection { conn ⇒
-    //      val ch = conn.createChannel()
-    //      try {
-    //        callback(ch)
-    //      } finally {
-    //        if (ch.isOpen) { ch.close() }
-    //      }
-    //    }
   }
 }
