@@ -41,7 +41,7 @@ object ChannelActor {
     def isConfirmingPublisher = mode.isInstanceOf[ConfirmingPublisher]
     def isPublisher = mode.isInstanceOf[Publisher]
     def isConsumer = mode.isInstanceOf[ConsumerMode]
-    //def toBasicChannel -- Should not be implemented.  The 
+    //def toBasicChannel -- Should not be implemented.  The
   }
 
   object %: {
@@ -193,6 +193,7 @@ private[amqp] abstract class ChannelActor(protected val settings: AmqpSettings)
       log.debug("Received channel {}", channel)
       channel.addShutdownListener(this)
       callbacks.foreach(_.apply(channel))
+      log.info("New channel available")
       goto(Available) using stateData.toAvailable(channel)
     case Event(WithChannel(callback), _) ⇒
       stash()

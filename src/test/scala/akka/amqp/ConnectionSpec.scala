@@ -1,7 +1,6 @@
 package akka.amqp
 import akka.agent.Agent
 import akka.actor.FSM.{ UnsubscribeTransitionCallBack, CurrentState, Transition, SubscribeTransitionCallBack }
-import akka.dispatch.{ Terminate }
 import akka.testkit.{ AkkaSpec, TestKit, TestFSMRef }
 import akka.actor.{ ActorSystem, PoisonPill }
 import scala.concurrent.duration._
@@ -14,9 +13,11 @@ import org.scalatest.matchers.MustMatchers
 class ValidConnectionSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
 
   abstract class AkkaScope extends AkkaSpec(AmqpConfig.Valid.config) with AmqpTest {
-    val connectionStatusAgent = Agent(false)(system)
+    import system.dispatcher
+    val connectionStatusAgent = Agent(false)
+
     val connectionActor = TestFSMRef(new ConnectionActor(AmqpConfig.Valid.settings, connectionStatusAgent))
-    def isConnected = connectionStatusAgent.await(5 seconds)
+    def isConnected = connectionStatusAgent()
 
     /**
      * If akkaSpec is used in a scope, it's ActorSystem must be shutdown manually, call this at the end of each scope
@@ -55,7 +56,7 @@ class ValidConnectionSpec extends WordSpec with MustMatchers with BeforeAndAfter
         }
       } finally {
         connectionActor ! UnsubscribeTransitionCallBack(testActor)
-        testActor ! Terminate()
+        testActor ! PoisonPill
         shutdown
       }
     }
@@ -131,7 +132,8 @@ class ValidConnectionSpec extends WordSpec with MustMatchers with BeforeAndAfter
 class NoConnectionSpec extends AkkaSpec(AmqpConfig.Invalid.config) {
   "Durable Connection" should {
     "never connect using non existing host addresses" in {
-      val connectionStatusAgent = akka.agent.Agent(false)(system)
+      import system.dispatcher
+      val connectionStatusAgent = akka.agent.Agent(false)
       val connectionActor = TestFSMRef(new ConnectionActor(AmqpConfig.Invalid.settings, connectionStatusAgent))
       try {
         connectionActor ! Connect
@@ -141,7 +143,7 @@ class NoConnectionSpec extends AkkaSpec(AmqpConfig.Invalid.config) {
         }
         connectionActor.stateName must be === Disconnected
       } finally {
-        testActor ! Terminate()
+        testActor ! PoisonPill
         connectionActor ! Disconnect // to cancel reconnect timer
         connectionActor ! PoisonPill
         afterAll //shutdown the ActorSystem

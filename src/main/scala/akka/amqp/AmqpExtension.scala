@@ -23,7 +23,7 @@ class AmqpExtensionImpl(implicit val _system: ActorSystem) extends Extension {
   implicit val settings = AmqpSettings(_system.settings.config.getConfig("akka.amqp.default"))
   implicit val extension = this
 
-  protected val connectionStatusAgent = Agent(false)(_system)
+  protected val connectionStatusAgent = Agent(false)(_system.dispatcher)
   def isConnected = connectionStatusAgent.get
 
   val connectionActor = _system.actorOf(Props(new ConnectionActor(settings, connectionStatusAgent)), "amqp-connection")

@@ -16,8 +16,7 @@ case class AmqpSettings(
   interactionTimeout: Duration,
   channelCreationTimeout: Duration,
   channelReconnectTimeout: Duration,
-  publisherConfirmTimeout: FiniteDuration
-)
+  publisherConfirmTimeout: FiniteDuration)
 
 object AmqpSettings {
 
@@ -33,6 +32,5 @@ object AmqpSettings {
       interactionTimeout = DurationLong(config.getMilliseconds("interaction-timeout")).milli,
       channelCreationTimeout = DurationLong(config.getMilliseconds("channel-creation-timeout")).milli,
       channelReconnectTimeout = DurationLong(config.getMilliseconds("channel-reconnect-timeout")).milli,
-      publisherConfirmTimeout = DurationLong(config.getMilliseconds("publisher-confirm-timeout")).milli
-    )
+      publisherConfirmTimeout = DurationLong(config.getMilliseconds("publisher-confirm-timeout")).milli)
 }
