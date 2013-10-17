@@ -16,7 +16,8 @@ import com.rabbitmq.client.Channel
  */
 class AmqpAdapter(settings: AmqpSettings, implicit val _system: ActorSystem) {
 
-  protected val connectionStatusAgent = Agent(false)(_system.dispatcher)
+  import _system.dispatcher
+  protected val connectionStatusAgent = Agent(false)
   def isConnected = connectionStatusAgent.get
 
   val connectionActor = _system.actorOf(Props(new ConnectionActor(settings, connectionStatusAgent)), "amqp-connection")
