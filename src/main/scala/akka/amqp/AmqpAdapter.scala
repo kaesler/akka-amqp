@@ -36,6 +36,12 @@ class AmqpAdapter(settings: AmqpSettings, implicit val system: ActorSystem) {
   /** Establish the connection to RabbitMq. */
   def connect() = connectionActor ! Connect
 
+  /** Create a channel actor. */
+  def createChannel(): Future[ActorRef] = {
+    implicit val to = akka.util.Timeout(5.seconds)
+    (connectionActor ? CreateChannel()).mapTo[ActorRef]
+  }
+
   /** Perform an operation using a temporary channel.
     * @param callback the function to apply to the channel.
     * @return the callback's result in a Future.
