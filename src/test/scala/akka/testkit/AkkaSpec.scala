@@ -23,7 +23,7 @@ object LongRunningTest extends Tag("long-running")
 object AkkaSpec {
   val testConf: Config = ConfigFactory.parseString("""
       akka {
-        event-handlers = ["akka.testkit.TestEventListener"]
+        loggers = ["akka.testkit.TestEventListener"]
         loglevel = "WARNING"
         stdout-loglevel = "WARNING"
         actor {

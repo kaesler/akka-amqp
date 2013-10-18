@@ -30,7 +30,7 @@ class AmqpAdapter(settings: AmqpSettings, implicit val system: ActorSystem) {
     system.actorOf(
       Props(
         new ConnectionActor(settings,
-                            connectionStatusAgent)),
+          connectionStatusAgent)),
       "amqp-connection")
 
   /** Establish the connection to RabbitMq. */
