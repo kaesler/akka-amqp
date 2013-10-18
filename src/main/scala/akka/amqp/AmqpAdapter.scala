@@ -14,22 +14,32 @@ import com.rabbitmq.client.Channel
  * Allows use AMQP without necessitating an Akka extension, which requires
  * initialization from the config file.
  */
-class AmqpAdapter(settings: AmqpSettings, implicit val _system: ActorSystem) {
+class AmqpAdapter(settings: AmqpSettings, implicit val system: ActorSystem) {
 
-  import _system.dispatcher
+  import system.dispatcher
+
   protected val connectionStatusAgent = Agent(false)
+
+  /** Return whether the Rabbit connection is established.
+    */
   def isConnected = connectionStatusAgent.get
 
-  val connectionActor = _system.actorOf(Props(new ConnectionActor(settings, connectionStatusAgent)), "amqp-connection")
+  /** The connection actor to be use to obtain other resources.
+    */
+  val connectionActor =
+    system.actorOf(
+      Props(
+        new ConnectionActor(settings,
+                            connectionStatusAgent)),
+      "amqp-connection")
 
-  def connect() = {
-    connectionActor ! Connect
-  }
-  def createChannel(): Future[ActorRef] = {
-    implicit val to = akka.util.Timeout(60.seconds)
-    (connectionActor ? CreateChannel()).mapTo[ActorRef]
-  }
+  /** Establish the connection to RabbitMq. */
+  def connect() = connectionActor ! Connect
 
+  /** Perform an operation using a temporary channel.
+    * @param callback the function to apply to the channel.
+    * @return the callback's result in a Future.
+    */
   def withTempChannel[T: ClassTag](callback: RabbitChannel ⇒ T): Future[T] = {
     implicit val to = akka.util.Timeout(60.seconds)
     val f = connectionActor ? WithConnection { connection ⇒
