@@ -2,7 +2,7 @@ import sbt._
 
 object dependencies {
   def Scalatest    = "org.scalatest" %% "scalatest" % "2.0.M5b" % "test"   	  // ApacheV2
-  def scalaActorsForScalaTest = "org.scala-lang" % "scala-actors" % "2.10.2" % "test"
+  def scalaActorsForScalaTest = "org.scala-lang" % "scala-actors" % "2.10.3" % "test"
   def AmqpClient = "com.rabbitmq" % "amqp-client" % "2.8.7"   													  // ApacheV2
 
 
