@@ -16,7 +16,7 @@ import akka.actor.ActorSystem
 import ChannelActor._
 //trait CanStop {
 //  def stop : Unit
-//} 
+//}
 //
 case class ReturnedMessage(replyCode: Int,
                            replyText: String,
@@ -43,7 +43,7 @@ case class Delivery(payload: Array[Byte],
 
 //object DurableConsumer {
 //  import scala.concurrent.ExecutionContext.Implicits.global
-//  
+//
 //  def apply(channel: RabbitChannel)(queue: DeclaredQueue,
 //                      deliveryHandler: ActorRef,
 //                      autoAck: Boolean,
@@ -51,7 +51,7 @@ case class Delivery(payload: Array[Byte],
 //    implicit val c = channel
 //   new DurableConsumer(queue,deliveryHandler,autoAck, queueBindings : _*)
 //  }
-//  
+//
 //  def apply(queue: DeclaredQueue,
 //                      deliveryHandler: ActorRef,
 //                      autoAck: Boolean,
@@ -59,10 +59,10 @@ case class Delivery(payload: Array[Byte],
 //
 //   durableChannel.withChannel{ implicit c =>
 //      new DurableConsumer(queue,deliveryHandler,autoAck, queueBindings : _*)
-//      
+//
 //      }
-//  }        
-//    
+//  }
+//
 //}
 case object StopConsuming
 trait ChannelConsumer { channelActor: ChannelActor ⇒
@@ -131,6 +131,11 @@ trait ChannelConsumer { channelActor: ChannelActor ⇒
           import envelope._
           listener ! Delivery(body, getRoutingKey, getDeliveryTag, isRedeliver, properties, context.self)
         }
+
+        @throws(classOf[IOException])
+        override def handleCancel(consumerTag: String) =
+          log.debug("Consumer cancellation notificatio received for {}", consumerTag)
+
       })
       tag
     }
