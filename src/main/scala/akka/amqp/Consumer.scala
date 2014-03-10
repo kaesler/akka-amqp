@@ -32,8 +32,13 @@ case class Delivery(payload: Array[Byte],
                     properties: BasicProperties,
                     channelActor: ActorRef) {
 
-  def acknowledge(deliveryTag: Long, multiple: Boolean = false) {
-    if (!channelActor.isTerminated) channelActor ! OnlyIfAvailable(_.basicAck(deliveryTag, multiple))
+  def acknowledge(deliveryTag: Long, multiple: Boolean = false): Boolean =  {
+    if (!channelActor.isTerminated) {
+      channelActor ! OnlyIfAvailable(_.basicAck(deliveryTag, multiple))
+      true
+    } else {
+      false
+    }
   }
 
   def reject(deliveryTag: Long, reQueue: Boolean = false) {
@@ -129,14 +134,17 @@ trait ChannelConsumer { channelActor: ChannelActor ⇒
       val tag = channel.basicConsume(queue.name, autoAck, new DefaultConsumer(channel) {
         override def handleDelivery(consumerTag: String, envelope: Envelope, properties: BasicProperties, body: Array[Byte]) {
           import envelope._
+          log.debug("handleDelivery() called from Java layer: queue is {}, consumer is {}, deliveryTag is {}",
+                    queue.name, getConsumerTag, getDeliveryTag.toString)
           listener ! Delivery(body, getRoutingKey, getDeliveryTag, isRedeliver, properties, context.self)
         }
 
         @throws(classOf[IOException])
         override def handleCancel(consumerTag: String) =
-          log.debug("Consumer cancellation notificatio received for {}", consumerTag)
-
+          log.debug("Consumer cancellation notification received for {}", consumerTag)
       })
+
+      log.debug("Registered with the Java client library a consumer with tag {}", tag)
       tag
     }
     ConsumerMode(listener, autoAck, bindings, tags)
