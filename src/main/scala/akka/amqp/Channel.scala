@@ -111,7 +111,7 @@ object ChannelActor {
   /**
    * Will execute only if the channel is currently available. Otherwise the message will be dropped.
    */
-  case class OnlyIfAvailable(callback: RabbitChannel ⇒ Unit)
+  case class OnlyIfAvailable(callback: RabbitChannel ⇒ Unit, callbackName: Option[String] = None)
   /**
    * Message to Execute the given code when the Channel is first Received from the ConnectionActor
    * Or immediately if the channel has already been received
@@ -198,7 +198,8 @@ private[amqp] abstract class ChannelActor(protected val settings: AmqpSettings)
     case Event(WithChannel(callback), _) ⇒
       stash()
       stay()
-    case Event(OnlyIfAvailable(callback), _) ⇒
+    case Event(OnlyIfAvailable(callback, optName), _) ⇒
+      log.debug("Channel callback named {} ignored when channel is unavailable", optName)
       stay()
 
     case Event(_: DeleteExchange, _) | Event(_: DeleteQueue, _) | Event(_: Declare, _) ⇒
@@ -222,7 +223,7 @@ private[amqp] abstract class ChannelActor(protected val settings: AmqpSettings)
     case Event(ConnectionDisconnected, Some(channel) %: _ %: _) ⇒
       log.warning("Connection went down of channel {}", channel)
       goto(Unavailable) using stateData.toUnavailable
-    case Event(OnlyIfAvailable(callback), Some(channel) %: _ %: _) ⇒
+    case Event(OnlyIfAvailable(callback, _), Some(channel) %: _ %: _) ⇒
       callback.apply(channel)
       stay()
     case Event(WithChannel(callback), Some(channel) %: _ %: _) ⇒

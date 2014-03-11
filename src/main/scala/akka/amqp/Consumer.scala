@@ -32,8 +32,10 @@ case class Delivery(payload: Array[Byte],
                     properties: BasicProperties,
                     channelActor: ActorRef) {
 
-  def acknowledge(deliveryTag: Long, multiple: Boolean = false): Boolean =  {
+  def acknowledge(deliveryTag: Long, multiple: Boolean = false): Boolean = {
     if (!channelActor.isTerminated) {
+      // TODO: Should we use WithChannel here instead of OnlyIfAvailable?.
+      // I.e. are we risking failing to ack?
       channelActor ! OnlyIfAvailable(_.basicAck(deliveryTag, multiple))
       true
     } else {
@@ -135,7 +137,7 @@ trait ChannelConsumer { channelActor: ChannelActor ⇒
         override def handleDelivery(consumerTag: String, envelope: Envelope, properties: BasicProperties, body: Array[Byte]) {
           import envelope._
           log.debug("handleDelivery() called from Java layer: queue is {}, consumer is {}, deliveryTag is {}",
-                    queue.name, getConsumerTag, getDeliveryTag.toString)
+            queue.name, getConsumerTag, getDeliveryTag.toString)
           listener ! Delivery(body, getRoutingKey, getDeliveryTag, isRedeliver, properties, context.self)
         }
 
