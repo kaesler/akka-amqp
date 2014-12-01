@@ -1,19 +1,13 @@
 package akka.amqp
 
+import java.io.IOException
+
 import akka.actor.ActorRef
+import akka.event.LoggingAdapter
+
+import ChannelActor._
 import Queue._
 
-import java.util.concurrent.atomic.AtomicReference
-import java.util.concurrent.{ CountDownLatch, TimeUnit }
-import util.control.Exception
-
-import java.io.IOException
-import akka.actor.ActorRef
-import akka.event.Logging
-import scala.concurrent.Future
-import scala.concurrent.Promise
-import akka.actor.ActorSystem
-import ChannelActor._
 //trait CanStop {
 //  def stop : Unit
 //}
@@ -30,21 +24,31 @@ case class Delivery(payload: Array[Byte],
                     deliveryTag: Long,
                     isRedeliver: Boolean,
                     properties: BasicProperties,
-                    channelActor: ActorRef) {
+                    channelActor: ActorRef,
+                    log: LoggingAdapter) {
 
   def acknowledge(deliveryTag: Long, multiple: Boolean = false): Boolean = {
     if (!channelActor.isTerminated) {
       // TODO: Should we use WithChannel here instead of OnlyIfAvailable?.
       // I.e. are we risking failing to ack?
-      channelActor ! OnlyIfAvailable(_.basicAck(deliveryTag, multiple))
+      channelActor ! OnlyIfAvailable { channel =>
+        channel.basicAck(deliveryTag, multiple)
+        log.debug("kae: Acked tag {} for routingKey {}", deliveryTag, routingKey)
+      }
       true
     } else {
+      log.debug("kae:Ack of deliveryTag {} for routingKey {} failed omitted because channel actor terminated",
+                deliveryTag, routingKey)
       false
     }
   }
 
   def reject(deliveryTag: Long, reQueue: Boolean = false) {
-    if (!channelActor.isTerminated) channelActor ! OnlyIfAvailable(_.basicReject(deliveryTag, reQueue))
+    if (!channelActor.isTerminated) channelActor ! OnlyIfAvailable { channel =>
+      channel.basicReject(deliveryTag, reQueue)
+      log.debug("kae: rejected deliveryTag {}, reqQueue = {}", deliveryTag, reQueue)
+    } else
+      log.debug("kae: rejection omitted for deliveryTag {} because channel actor terminated", deliveryTag)
   }
 }
 
@@ -138,7 +142,7 @@ trait ChannelConsumer { channelActor: ChannelActor ⇒
           import envelope._
           log.debug("handleDelivery() called from Java layer: queue is {}, consumer is {}, deliveryTag is {}",
             queue.name, getConsumerTag, getDeliveryTag.toString)
-          listener ! Delivery(body, getRoutingKey, getDeliveryTag, isRedeliver, properties, context.self)
+          listener ! Delivery(body, getRoutingKey, getDeliveryTag, isRedeliver, properties, context.self, log)
         }
 
         @throws(classOf[IOException])
