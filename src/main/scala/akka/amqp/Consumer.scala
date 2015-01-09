@@ -33,11 +33,11 @@ case class Delivery(payload: Array[Byte],
       // I.e. are we risking failing to ack?
       channelActor ! OnlyIfAvailable { channel ⇒
         channel.basicAck(deliveryTag, multiple)
-        log.debug("kae: Acked tag {} for routingKey {}", deliveryTag, routingKey)
+        log.debug("Acked tag {} for routingKey {}", deliveryTag, routingKey)
       }
       true
     } else {
-      log.debug("kae:Ack of deliveryTag {} for routingKey {} failed omitted because channel actor terminated",
+      log.debug("Ack of deliveryTag {} for routingKey {} failed omitted because channel actor terminated",
         deliveryTag, routingKey)
       false
     }
@@ -46,10 +46,10 @@ case class Delivery(payload: Array[Byte],
   def reject(deliveryTag: Long, reQueue: Boolean = false) {
     if (!channelActor.isTerminated) channelActor ! OnlyIfAvailable { channel ⇒
       channel.basicReject(deliveryTag, reQueue)
-      log.debug("kae: rejected deliveryTag {}, reqQueue = {}", deliveryTag, reQueue)
+      log.debug("Rejected deliveryTag {}, reqQueue = {}", deliveryTag, reQueue)
     }
     else
-      log.debug("kae: rejection omitted for deliveryTag {} because channel actor terminated", deliveryTag)
+      log.debug("Rejection omitted for deliveryTag {} because channel actor terminated", deliveryTag)
   }
 }
 
