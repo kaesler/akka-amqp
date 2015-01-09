@@ -10,6 +10,7 @@ import scala.concurrent.Promise
 import akka.pattern.ask
 import org.scalatest.{ WordSpec, BeforeAndAfterAll, Tag, BeforeAndAfter }
 import org.scalatest.matchers.MustMatchers
+import com.rabbitmq.client.Method
 class ValidConnectionSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
 
   abstract class AkkaScope extends AkkaSpec(AmqpConfig.Valid.config) with AmqpTest {
@@ -50,7 +51,7 @@ class ValidConnectionSpec extends WordSpec with MustMatchers with BeforeAndAfter
           connectionActor ! Connect
           connectionActor ! SubscribeTransitionCallBack(testActor)
           expectMsg(CurrentState(connectionActor, Connected))
-          connectionActor ! new ShutdownSignalException(true, false, "Test (Mock Exception for testing)", connection)
+          connectionActor ! new ShutdownSignalException(true, false, null, connection)
           expectMsg(Transition(connectionActor, Connected, Disconnected))
           expectMsg(Transition(connectionActor, Disconnected, Connected)) //reconnect success
         }

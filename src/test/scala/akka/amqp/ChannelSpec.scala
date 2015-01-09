@@ -53,7 +53,7 @@ class ChannelSpec extends AkkaSpec(AmqpConfig.Valid.config) with AmqpMock {
     }
 
     "request new channel when channel brakes and go to Unavailble" in {
-      channelActor ! new ShutdownSignalException(false, false, "Test", channel)
+      channelActor ! new ShutdownSignalException(false, false, null, channel)
       channelActor.stateName must be === Unavailable
     }
     "go to Unavailable when connection disconnects" in new TestKit(system) with AmqpMock {
