@@ -31,23 +31,24 @@ case class Delivery(payload: Array[Byte],
     if (!channelActor.isTerminated) {
       // TODO: Should we use WithChannel here instead of OnlyIfAvailable?.
       // I.e. are we risking failing to ack?
-      channelActor ! OnlyIfAvailable { channel =>
+      channelActor ! OnlyIfAvailable { channel ⇒
         channel.basicAck(deliveryTag, multiple)
         log.debug("kae: Acked tag {} for routingKey {}", deliveryTag, routingKey)
       }
       true
     } else {
       log.debug("kae:Ack of deliveryTag {} for routingKey {} failed omitted because channel actor terminated",
-                deliveryTag, routingKey)
+        deliveryTag, routingKey)
       false
     }
   }
 
   def reject(deliveryTag: Long, reQueue: Boolean = false) {
-    if (!channelActor.isTerminated) channelActor ! OnlyIfAvailable { channel =>
+    if (!channelActor.isTerminated) channelActor ! OnlyIfAvailable { channel ⇒
       channel.basicReject(deliveryTag, reQueue)
       log.debug("kae: rejected deliveryTag {}, reqQueue = {}", deliveryTag, reQueue)
-    } else
+    }
+    else
       log.debug("kae: rejection omitted for deliveryTag {} because channel actor terminated", deliveryTag)
   }
 }
